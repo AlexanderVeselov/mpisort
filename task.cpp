@@ -10,6 +10,7 @@
 #include <cassert>
 #include <fstream>
 #include <string>
+#include <chrono>
 
 #define parallel
 
@@ -307,11 +308,21 @@ int main(int argc, char ** argv)
 
     WriteDataToFile("unsorted.txt", data.get(), local_size);
 
+    std::chrono::high_resolution_clock::time_point start_time =
+        std::chrono::high_resolution_clock::now();
+
     // Sort
     sort(data.get(), local_size, global_size);
 
     // Issue a barrier
     Barrier();
+
+    if (MasterNode())
+    {
+        std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
+        double elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(end - start_time).count();
+        std::cout << "Execution of sort took " << elapsed << " s." << std::endl;
+    }
 
     WriteDataToFile("sorted.txt", data.get(), local_size);
 
