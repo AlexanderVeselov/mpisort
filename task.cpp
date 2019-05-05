@@ -9,6 +9,8 @@
 #include <vector>
 #include <cassert>
 
+#define parallel
+
 std::vector<std::size_t> g_node_counts;
 
 std::uint32_t GetNodeId()
@@ -63,6 +65,7 @@ std::size_t GetLocalElementId(std::size_t global_id)
 
 void heapify(std::uint32_t * arr, int n)
 {
+#pragma omp parallel for
     for (int i = 1; i < n; i++)
     {
         // if child is bigger than parent
@@ -71,7 +74,7 @@ void heapify(std::uint32_t * arr, int n)
             int j = i;
       
             // swap child and parent until
-            // parent is smaller 
+            // parent is smaller
             while (arr[j] > arr[(j - 1) / 2])
             { 
                 std::swap(arr[j], arr[(j - 1) / 2]);
