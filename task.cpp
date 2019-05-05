@@ -11,14 +11,14 @@
 
 std::vector<std::size_t> g_node_counts;
 
-int GetNodeId()
+std::uint32_t GetNodeId()
 {
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     return rank;
 }
 
-int GetNumNodes()
+std::uint32_t GetNumNodes()
 {
     int size;
     MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -27,7 +27,7 @@ int GetNumNodes()
 
 bool MasterNode()
 {
-    return GetNodeId() == 0;
+    return GetNodeId() == 0u;
 }
 
 void Barrier()
@@ -35,7 +35,7 @@ void Barrier()
     MPI_Barrier(MPI_COMM_WORLD);
 }
 
-int GetNodeIdFromElementId(std::size_t id)
+std::uint32_t GetNodeIdFromElementId(std::size_t id)
 {
     std::size_t count = 0;
     for (auto i = 0u; i < g_node_counts.size(); ++i)
@@ -61,71 +61,34 @@ std::size_t GetLocalElementId(std::size_t global_id)
     return result;
 }
 
-//std::uint32_t GetElement(std::uint32_t * data, int global_size, int id)
-//{
-//    int node_elem_id = GetNodeIdFromElementId(global_size, id);
-//    if (node_elem_id == GetNodeId())
-//    {
-//        return data[id];
-//    }
-//    else
-//    {
-//        if (GetNodeId() == node_elem_id)
-//        {
-//            MPI_Send(data, 1, MPI_UNSIGNED, )
-//        }
-//    }
-//}
-
-void heapify(std::uint32_t * arr, int n, int root_index)
+void heapify(std::uint32_t * arr, int n)
 {
-    int largest = root_index;
-    int l = 2 * root_index + 1;
-    int r = 2 * root_index + 2;
-
-    // If left child is larger than root 
-    if (l < n && arr[l] > arr[largest])
+    for (int i = 1; i < n; i++)
     {
-        largest = l;
-    }
-
-    // If right child is larger than largest so far 
-    if (r < n && arr[r] > arr[largest])
-    {
-        largest = r;
-    }
-
-    // If largest is not root 
-    if (largest != root_index)
-    {
-        std::swap(arr[root_index], arr[largest]);
-
-        // Recursively heapify the affected sub-tree 
-        heapify(arr, n, largest);
+        // if child is bigger than parent
+        if (arr[i] > arr[(i - 1) / 2])
+        { 
+            int j = i;
+      
+            // swap child and parent until
+            // parent is smaller 
+            while (arr[j] > arr[(j - 1) / 2])
+            { 
+                std::swap(arr[j], arr[(j - 1) / 2]);
+                j = (j - 1) / 2;
+            }
+        }
     }
 }
 
 void sort(
     std::uint32_t * data,
     int local_size,
-    int global_size,
-    const MPI_Comm comm
+    int global_size
 )
 {
-    // Build heap (rearrange array) 
-    for (int i = local_size / 2 - 1; i >= 0; i--)
-    {
-        heapify(data, local_size, i);
-    }
-
-    std::cout << "Node " << GetNodeId() << ": ";
-    for (auto i = 0; i < local_size; ++i)
-    {
-        std::cout << data[i] << " ";
-    }
-    std::cout << std::endl;
-
-    Barrier();
+    // Build heap (rearrange array)
+    heapify(data, local_size);
 
     static const std::uint32_t sorted_marker = ~0u;
 
@@ -135,7 +98,7 @@ void sort(
     for (std::size_t sorted_position = global_size - 1; sorted_position > 0; --sorted_position)
     {
         // Node id where sorted data starts
-        std::size_t sorted_node_id = GetNodeIdFromElementId(sorted_position);
+        std::uint32_t sorted_node_id = GetNodeIdFromElementId(sorted_position);
 
         // If number of tree elements is zero, the node is sorted
         bool is_node_sorted = (num_tree_elements == 0);
@@ -148,7 +111,7 @@ void sort(
         MPI_Allgather(&send_root, 1, MPI_UNSIGNED, roots.data(), 1, MPI_UNSIGNED, MPI_COMM_WORLD);
 
         // Find a node with max root
-        std::size_t max_root_node_id = std::max_element(roots.begin(), roots.end(),
+        std::uint32_t max_root_node_id = std::max_element(roots.begin(), roots.end(),
             [](std::uint32_t a, std::uint32_t b)
         {
             if (a == sorted_marker) return true;
@@ -158,21 +121,7 @@ void sort(
 
         Barrier();
 
-        // DEBUG INFO
-        if (MasterNode())
-        {
-            std::cout << "sorted position: " << sorted_position << std::endl;
-            std::cout << "sorted node id: " << sorted_node_id << std::endl;
-            for (std::size_t i = 0; i < roots.size(); ++i)
-            {
-                std::cout << "node: " << i << " root: " << roots[i] << std::endl;
-            }
-            std::cout << "max index: " << max_root_node_id << std::endl;
-        }
-
-        Barrier();
-
-        // If 
+        // Check if we need to swap data between nodes
         if (max_root_node_id != sorted_node_id)
         {
             std::uint32_t recv_data;
@@ -190,7 +139,6 @@ void sort(
             {
                 MPI_Status status;
                 MPI_Recv(&recv_data, 1, MPI_UNSIGNED, max_root_node_id, 0, MPI_COMM_WORLD, &status);
-                std::cout << "sorted_node_id received value: " << recv_data << std::endl;
             }
 
             // 2. Send data[GetLocalElementId(sorted_position)] form sorted_node_id to max_root_node_id
@@ -202,7 +150,6 @@ void sort(
             {
                 MPI_Status status;
                 MPI_Recv(&recv_data, 1, MPI_UNSIGNED, sorted_node_id, 0, MPI_COMM_WORLD, &status);
-                std::cout << "max_root_node_id received value: " << recv_data << std::endl;
             }
 
             // 3. Swap recv_data and data[GetLocalElementId(sorted_position)] on sorted_node_id
@@ -212,7 +159,7 @@ void sort(
                 // Decrease the number of tree elements
                 --num_tree_elements;
                 // And heapify remaining values inside the node
-                heapify(data, num_tree_elements, 0);
+                heapify(data, num_tree_elements);
             }
 
             // 4. Swap recv_data and data[0] on max_root_node_id
@@ -220,7 +167,7 @@ void sort(
             {
                 std::swap(recv_data, data[0]);
                 // And heapify
-                heapify(data, num_tree_elements, 0);
+                heapify(data, num_tree_elements);
             }
         }
         else if (GetNodeId() == max_root_node_id)
@@ -230,26 +177,9 @@ void sort(
             // Decrease the number of tree elements
             --num_tree_elements;
             // And heapify remaining values inside the node
-            heapify(data, num_tree_elements, 0);
+            heapify(data, num_tree_elements);
         }
 
-        Barrier();
-
-        if (MasterNode())
-        {
-            std::cout << "After exchange:" << std::endl;
-        }
-
-        Barrier();
-
-        std::cout << "Node " << GetNodeId() << ": ";
-        for (auto i = 0; i < local_size; ++i)
-        {
-            std::cout << data[i] << " ";
-        }
-        std::cout << std::endl;
-
-        Barrier();
     }
 
 }
@@ -261,7 +191,7 @@ auto GenerateData(std::size_t data_size)
     srand(GetNodeId());
     std::generate_n(data.get(), data_size, []()
     {
-        return rand() % 100;
+        return rand();
     });
 
     return std::move(data);
@@ -338,17 +268,8 @@ int main(int argc, char ** argv)
     // Issue a barrier
     Barrier();
 
-    //if (MasterNode())
-    //{
-    //    for (int i = 0; i < global_size; ++i)
-    //    {
-    //        std::cout << i << " node id: " << GetNodeIdFromElementId(global_size, i) << " ";
-    //    }
-    //    std::cout << std::endl;
-    //}
-
     // Sort
-    sort(data.get(), local_size, global_size, MPI_COMM_WORLD);
+    sort(data.get(), local_size, global_size);
 
     // Issue a barrier
     Barrier();
