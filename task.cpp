@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <vector>
 #include <cassert>
+#include <fstream>
+#include <string>
 
 #define parallel
 
@@ -72,7 +74,7 @@ void heapify(std::uint32_t * arr, int n)
         if (arr[i] > arr[(i - 1) / 2])
         { 
             int j = i;
-      
+
             // swap child and parent until
             // parent is smaller
             while (arr[j] > arr[(j - 1) / 2])
@@ -200,6 +202,38 @@ auto GenerateData(std::size_t data_size)
     return std::move(data);
 }
 
+void WriteDataToFile(std::string const& filename, std::uint32_t * data, std::size_t count)
+{
+    std::ofstream file;
+
+    if (MasterNode())
+    {
+        file.open(filename);
+    }
+
+    Barrier();
+
+    if (!MasterNode())
+    {
+        file.open(filename, std::ios::out | std::ios::app);
+    }
+
+    Barrier();
+
+    for (auto i = 0u; i < GetNumNodes(); ++i)
+    {
+        if (GetNodeId() == i)
+        {
+            for (auto j = 0u; j < count; ++j)
+            {
+                file << data[j] << std::endl;
+            }
+        }
+
+        Barrier();
+    }
+}
+
 std::pair< bool, bool > is_sorted(const std::uint32_t * begin, const std::uint32_t * end, const MPI_Comm comm)
 {
     auto mpi_type = MPI_INT;
@@ -271,11 +305,15 @@ int main(int argc, char ** argv)
     // Issue a barrier
     Barrier();
 
+    WriteDataToFile("unsorted.txt", data.get(), local_size);
+
     // Sort
     sort(data.get(), local_size, global_size);
 
     // Issue a barrier
     Barrier();
+
+    WriteDataToFile("sorted.txt", data.get(), local_size);
 
     // Check for sorted
     auto result = is_sorted(data.get(), data.get() + local_size, MPI_COMM_WORLD);
